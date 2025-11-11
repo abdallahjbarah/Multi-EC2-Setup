@@ -15,5 +15,4 @@ COPY . .
 EXPOSE 3000
 
 # Start the app
-CMD ["node", "app.js"]   # if app.js is in top-level of application/
-
+CMD ["node", "app.js"]

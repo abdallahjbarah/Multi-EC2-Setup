@@ -10,10 +10,10 @@ export class MultipleEc2Stack extends cdk.Stack {
   constructor(scope: Construct, id: string, props?: cdk.StackProps) {
     super(scope, id, props);
 
-    // VPC
+    // ---------- VPC ----------
     const vpc = new ec2.Vpc(this, "MyVpc", { maxAzs: 2 });
 
-    // Security groups
+    // ---------- Security Groups ----------
     const ec2Sg = new ec2.SecurityGroup(this, "Ec2Sg", {
       vpc,
       allowAllOutbound: true,
@@ -27,22 +27,21 @@ export class MultipleEc2Stack extends cdk.Stack {
     });
     albSg.addIngressRule(ec2.Peer.anyIpv4(), ec2.Port.tcp(80), "Allow HTTP");
 
-    // Ubuntu 22.04 AMI
+    // ---------- Ubuntu AMI ----------
     const ubuntuAmi = ec2.MachineImage.fromSsmParameter(
       "/aws/service/canonical/ubuntu/server/22.04/stable/current/amd64/hvm/ebs-gp2",
       { os: ec2.OperatingSystemType.LINUX }
     );
 
-    // ECR repository
+    // ---------- ECR Repository ----------
     const repo = new ecr.Repository(this, "MyAppRepo", {
       repositoryName: "myapp",
       removalPolicy: cdk.RemovalPolicy.RETAIN,
     });
-
     const repoUri = repo.repositoryUri;
     const registry = repoUri.split("/")[0];
 
-    // EC2 IAM role
+    // ---------- IAM Role for EC2 ----------
     const role = new iam.Role(this, "EC2Role", {
       assumedBy: new iam.ServicePrincipal("ec2.amazonaws.com"),
     });
@@ -55,28 +54,34 @@ export class MultipleEc2Stack extends cdk.Stack {
       iam.ManagedPolicy.fromAwsManagedPolicyName("AmazonSSMManagedInstanceCore")
     );
 
-    // UserData
+    // ---------- UserData ----------
     const userData = ec2.UserData.forLinux();
-    userData.addCommands(
-      "set -xe",
-      "apt-get update -y",
-      "apt-get install -y docker.io awscli nginx",
+    userData.addCommands(`
+set -xe
 
-      // Start Docker & Nginx
-      "systemctl enable docker && systemctl start docker",
-      "systemctl enable nginx && systemctl start nginx",
+# Install Docker, AWS CLI, Nginx
+apt-get update -y
+apt-get install -y docker.io awscli nginx
 
-      // Login to ECR
-      `aws ecr get-login-password --region ${this.region} | docker login --username AWS --password-stdin ${registry}`,
+# Enable & start services
+systemctl enable docker && systemctl start docker
+systemctl enable nginx && systemctl start nginx
 
-      // Pull & run container
-      `docker pull ${repoUri}:latest || true`,
-      "docker stop myapp || true",
-      "docker rm myapp || true",
-      `docker run -d --restart always --name myapp -p 3000:3000 ${repoUri}:latest`,
+# Login to ECR
+aws ecr get-login-password --region ${this.region} | docker login --username AWS --password-stdin ${registry}
 
-      // Configure Nginx reverse proxy
-      `cat <<'NGINXCONF' > /etc/nginx/sites-available/default
+# Pull latest container
+docker pull ${repoUri}:latest || true
+
+# Stop & remove old container
+docker stop myapp || true
+docker rm myapp || true
+
+# Run new container
+docker run -d --restart always --name myapp -p 3000:3000 ${repoUri}:latest
+
+# Configure Nginx
+cat <<'NGINXCONF' > /etc/nginx/sites-available/default
 server {
     listen 80;
     location / {
@@ -87,11 +92,12 @@ server {
         proxy_set_header X-Forwarded-Proto $scheme;
     }
 }
-NGINXCONF`,
-      "systemctl restart nginx"
-    );
+NGINXCONF
 
-    // Launch template & ASG
+systemctl restart nginx
+`);
+
+    // ---------- Launch Template ----------
     const launchTemplate = new ec2.LaunchTemplate(
       this,
       "WebServerLaunchTemplate",
@@ -104,6 +110,7 @@ NGINXCONF`,
       }
     );
 
+    // ---------- Auto Scaling Group ----------
     const asg = new autoscaling.AutoScalingGroup(this, "WebServerASG", {
       vpc,
       minCapacity: 2,
@@ -115,7 +122,7 @@ NGINXCONF`,
 
     repo.grantPull(role);
 
-    // ALB
+    // ---------- Application Load Balancer ----------
     const alb = new elbv2.ApplicationLoadBalancer(this, "MyALB", {
       vpc,
       internetFacing: true,
@@ -124,12 +131,12 @@ NGINXCONF`,
 
     const listener = alb.addListener("Listener", { port: 80, open: true });
     listener.addTargets("TargetGroup", {
-      port: 80,
+      port: 80, // host port (Nginx)
       targets: [asg],
       healthCheck: { path: "/", interval: cdk.Duration.seconds(30) },
     });
 
-    // Outputs
+    // ---------- Outputs ----------
     new cdk.CfnOutput(this, "LoadBalancerDNS", {
       value: alb.loadBalancerDnsName,
     });
