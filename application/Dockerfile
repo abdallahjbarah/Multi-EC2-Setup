@@ -1,4 +1,3 @@
-# application/Dockerfile
 FROM node:20-alpine
 
 WORKDIR /application
@@ -12,4 +11,4 @@ COPY . .
 
 EXPOSE 3000
 
-CMD ["node", "app.js"]   # app.js is top-level inside ./application
+CMD ["npm", "start"]
