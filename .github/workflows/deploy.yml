@@ -1,51 +1,33 @@
-name: Deploy to AWS ECR + ASG
+name: Deploy to ECR
 
 on:
   push:
-    branches:
-      - main
+    branches: ["main"]
 
 jobs:
-  build-and-deploy:
+  deploy:
     runs-on: ubuntu-latest
 
-    env:
-      ECR_URI: 825765404926.dkr.ecr.us-east-1.amazonaws.com/myapp
-      AWS_REGION: us-east-1
-      ASG_NAME: MultipleEc2Stack-WebServerASG5A722E5A-Wf5eFl2L1kRa # replace with CDK output
-
     steps:
-      - name: Checkout repo
+      - name: Checkout code
         uses: actions/checkout@v3
 
-      - name: Configure AWS Credentials
+      - name: Configure AWS
         uses: aws-actions/configure-aws-credentials@v2
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ env.AWS_REGION }}
+          aws-region: us-east-1
 
       - name: Login to Amazon ECR
-        uses: aws-actions/amazon-ecr-login@v1
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
 
-      - name: Build Docker image
-        run: |
-          docker build -t myapp:latest ./application
-          docker tag myapp:latest $ECR_URI:latest
-
-      - name: Push Docker image
-        run: |
-          docker push $ECR_URI:latest
-
-      - name: Update ASG instances via SSM
-        run: |
-          aws ssm send-command \
-            --targets "Key=tag:aws:autoscaling:groupName,Values=$ASG_NAME" \
-            --document-name "AWS-RunShellScript" \
-            --comment "Update myapp container" \
-            --parameters 'commands=[
-              "docker pull '$ECR_URI':latest",
-              "docker stop myapp || true",
-              "docker rm myapp || true",
-              "docker run -d --restart always --name myapp -p 3000:3000 '$ECR_URI':latest"
-            ]'
+      - name: Build & Push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./application
+          file: ./application/Dockerfile
+          push: true
+          tags: |
+            ${{ steps.login-ecr.outputs.registry }}/myapp:latest
