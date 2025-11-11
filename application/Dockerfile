@@ -1,18 +1,15 @@
-# Use Node 20 Alpine
+# application/Dockerfile
 FROM node:20-alpine
 
-# Set working directory inside container
-WORKDIR /app
+WORKDIR /application
 
-# Copy package files first for caching
+# Copy package files first
 COPY package*.json ./
 RUN npm install
 
-# Copy the rest of the application code
+# Copy everything in the application folder
 COPY . .
 
-# Expose Node app port
 EXPOSE 3000
 
-# Start the app
-CMD ["node", "app.js"]
+CMD ["node", "app.js"]   # app.js is top-level inside ./application
