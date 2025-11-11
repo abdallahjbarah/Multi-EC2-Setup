@@ -1,4 +1,3 @@
-# .github/workflows/deploy.yml
 name: Deploy to AWS ECR + ASG
 
 on:
@@ -13,7 +12,7 @@ jobs:
     env:
       ECR_URI: 825765404926.dkr.ecr.us-east-1.amazonaws.com/myapp
       AWS_REGION: us-east-1
-      ASG_NAME: MultipleEc2Stack-WebServerASG5A722E5A-Wf5eFl2L1kRa # replace with your actual ASG name tag
+      ASG_NAME: <YOUR_ASG_NAME> # replace with CDK output
 
     steps:
       - name: Checkout repo
@@ -27,7 +26,6 @@ jobs:
           aws-region: ${{ env.AWS_REGION }}
 
       - name: Login to Amazon ECR
-        id: login-ecr
         uses: aws-actions/amazon-ecr-login@v1
 
       - name: Build Docker image
@@ -35,7 +33,7 @@ jobs:
           docker build -t myapp:latest ./application
           docker tag myapp:latest $ECR_URI:latest
 
-      - name: Push Docker image to ECR
+      - name: Push Docker image
         run: |
           docker push $ECR_URI:latest
 

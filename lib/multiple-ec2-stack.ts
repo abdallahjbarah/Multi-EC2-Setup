@@ -25,15 +25,11 @@ export class MultipleEc2Stack extends cdk.Stack {
       vpc,
       allowAllOutbound: true,
     });
-    albSg.addIngressRule(
-      ec2.Peer.anyIpv4(),
-      ec2.Port.tcp(80),
-      "Allow HTTP to ALB"
-    );
+    albSg.addIngressRule(ec2.Peer.anyIpv4(), ec2.Port.tcp(80), "Allow HTTP");
 
-    // AMI (Ubuntu 22.04 via SSM parameter)
+    // Ubuntu 22.04 AMI
     const ubuntuAmi = ec2.MachineImage.fromSsmParameter(
-      "/aws/service/canonical/ubuntu/server/22.04/stable/current/amd64/hvm/ebs-gp2/ami-id",
+      "/aws/service/canonical/ubuntu/server/22.04/stable/current/amd64/hvm/ebs-gp2",
       { os: ec2.OperatingSystemType.LINUX }
     );
 
@@ -42,15 +38,13 @@ export class MultipleEc2Stack extends cdk.Stack {
       repositoryName: "myapp",
       removalPolicy: cdk.RemovalPolicy.RETAIN,
     });
-    repo.addLifecycleRule({ maxImageCount: 30 });
 
     const repoUri = repo.repositoryUri;
     const registry = repoUri.split("/")[0];
 
-    // IAM role for EC2 instances
+    // EC2 IAM role
     const role = new iam.Role(this, "EC2Role", {
       assumedBy: new iam.ServicePrincipal("ec2.amazonaws.com"),
-      description: "Role for EC2 instances to pull Docker images from ECR",
     });
     role.addManagedPolicy(
       iam.ManagedPolicy.fromAwsManagedPolicyName(
@@ -65,33 +59,26 @@ export class MultipleEc2Stack extends cdk.Stack {
     const userData = ec2.UserData.forLinux();
     userData.addCommands(
       "set -xe",
-
-      // Update OS and install Docker + Nginx + AWS CLI
       "apt-get update -y",
-      "apt-get install -y docker.io awscli nginx git",
+      "apt-get install -y docker.io awscli nginx",
 
-      // Enable & start services
+      // Start Docker & Nginx
       "systemctl enable docker && systemctl start docker",
       "systemctl enable nginx && systemctl start nginx",
 
-      // Login to ECR using instance role
+      // Login to ECR
       `aws ecr get-login-password --region ${this.region} | docker login --username AWS --password-stdin ${registry}`,
 
-      // Pull latest container image
+      // Pull & run container
       `docker pull ${repoUri}:latest || true`,
-
-      // Stop and remove old container if it exists
       "docker stop myapp || true",
       "docker rm myapp || true",
-
-      // Run container on port 3000
       `docker run -d --restart always --name myapp -p 3000:3000 ${repoUri}:latest`,
 
-      // Configure Nginx on EC2 host (reverse proxy 80 -> 3000)
+      // Configure Nginx reverse proxy
       `cat <<'NGINXCONF' > /etc/nginx/sites-available/default
 server {
     listen 80;
-
     location / {
         proxy_pass http://127.0.0.1:3000;
         proxy_set_header Host $host;
@@ -101,15 +88,10 @@ server {
     }
 }
 NGINXCONF`,
-
-      // Restart Nginx to apply configuration
-      "systemctl restart nginx",
-
-      // Install and run Watchtower for automatic updates
-      `docker run -d --name watchtower --restart always -v /var/run/docker.sock:/var/run/docker.sock containrrr/watchtower myapp --interval 30`
+      "systemctl restart nginx"
     );
 
-    // Launch Template
+    // Launch template & ASG
     const launchTemplate = new ec2.LaunchTemplate(
       this,
       "WebServerLaunchTemplate",
@@ -122,7 +104,6 @@ NGINXCONF`,
       }
     );
 
-    // Auto Scaling Group
     const asg = new autoscaling.AutoScalingGroup(this, "WebServerASG", {
       vpc,
       minCapacity: 2,
@@ -132,7 +113,6 @@ NGINXCONF`,
       vpcSubnets: { subnetType: ec2.SubnetType.PUBLIC },
     });
 
-    // Grant pull access to ECR
     repo.grantPull(role);
 
     // ALB
@@ -144,7 +124,7 @@ NGINXCONF`,
 
     const listener = alb.addListener("Listener", { port: 80, open: true });
     listener.addTargets("TargetGroup", {
-      port: 80, // host port (Nginx)
+      port: 80,
       targets: [asg],
       healthCheck: { path: "/", interval: cdk.Duration.seconds(30) },
     });
