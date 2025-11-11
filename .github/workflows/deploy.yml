@@ -12,7 +12,7 @@ jobs:
     env:
       ECR_URI: 825765404926.dkr.ecr.us-east-1.amazonaws.com/myapp
       AWS_REGION: us-east-1
-      ASG_NAME: <YOUR_ASG_NAME> # replace with CDK output
+      ASG_NAME: MultipleEc2Stack-WebServerASG5A722E5A-Wf5eFl2L1kRa # replace with CDK output
 
     steps:
       - name: Checkout repo
