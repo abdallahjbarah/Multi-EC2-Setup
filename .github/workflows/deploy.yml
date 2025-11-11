@@ -1,0 +1,47 @@
+name: Deploy to AWS ECR + ASG
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v3
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v2
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-1
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v1
+
+      - name: Build Docker image
+        run: |
+          docker build -t myapp:latest .
+          docker tag myapp:latest 825765404926.dkr.ecr.us-east-1.amazonaws.com/myapp:latest
+
+      - name: Push Docker image to ECR
+        run: |
+          docker push 825765404926.dkr.ecr.us-east-1.amazonaws.com/myapp:latest
+
+      - name: Update ASG instances via SSM
+        run: |
+          aws ssm send-command \
+            --targets "Key=tag:aws:autoscaling:groupName,Values=<ASG_NAME>" \
+            --document-name "AWS-RunShellScript" \
+            --comment "Update myapp container" \
+            --parameters 'commands=[
+              "docker pull 825765404926.dkr.ecr.us-east-1.amazonaws.com/myapp:latest",
+              "docker stop myapp || true",
+              "docker rm myapp || true",
+              "docker run -d --restart always --name myapp -p 3000:3000 825765404926.dkr.ecr.us-east-1.amazonaws.com/myapp:latest"
+            ]'
