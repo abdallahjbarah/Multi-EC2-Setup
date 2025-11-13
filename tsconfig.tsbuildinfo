@@ -1,0 +1,1 @@
+{"root":["./lib/multiple-ec2-stack.ts","./lib/compute/autoscaling.ts","./lib/compute/instance-role.ts","./lib/compute/launchtemplate.ts","./lib/compute/userdata.ts","./lib/loadbalancers/alb.ts","./lib/netowrking/vpc-and-sg.ts","./lib/registery/ecr-repo.ts","./bin/multiple-ec2.ts"],"errors":true,"version":"5.9.3"}
